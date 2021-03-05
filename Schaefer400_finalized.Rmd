@@ -1,0 +1,215 @@
+---
+title: "WMBW_Schaefer400"
+output: html_document
+---
+
+```{r setup, include=FALSE, cache = TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE,message=FALSE}
+library(rio)
+library(tidyverse)
+library(sjmisc)
+library(DescTools)
+library(tidymodels)
+library(janitor)
+library(magrittr)
+library(doParallel)
+library(kableExtra)
+#library(Rmisc)
+library(afex)
+```
+
+### Check and remove potential outliers (behavioral and neural)
+```{r outlier_check}
+rm(list = ls())
+
+# load in the COPE11 data with Schaefer400 parcellation scheme applied:
+schaefer400_cope11 <- import(here::here('./data/wm_schaf_cope11_pe_2mm_pe_400.csv'))
+# load in behavioral results (2-back, list-sorting, Pmat, picVocalb, reading_recog)
+behavioral <- import(here::here('./data/HCP_behavioral_data.csv')) %>%
+  select(Subject, WM_Task_2bk_Acc, ListSort_AgeAdj, PMAT24_A_CR, PicVocab_AgeAdj, ReadEng_AgeAdj)
+# merge and remove na
+working_df <- inner_join(schaefer400_cope11, behavioral, by = 'Subject') %>% 
+  na.omit()
+
+# subjects who had more than 20 parcels showing extreme values. 
+outlier_index_neural <- 
+  working_df[,2:ncol(schaefer400_cope11)] %>%
+  map(~ scale(.)) %>%
+  as.data.frame() %>%
+  mutate(sub_id = as.factor(working_df$Subject)) %>% # add back subject id
+  pivot_longer(., LH_Cont_Cing_1: RH_Vis_9, names_to = "parcel_name",  values_to = "value") %>%
+  filter(abs(value) > 3) %>%
+  count(sub_id) %>%
+  filter(n > 20)
+outlier_index_neural
+
+# subjects who had extreme value in any of the behavioral measure.
+outlier_index_behavioral <- 
+  working_df[,(ncol(schaefer400_cope11)+1):ncol(working_df)] %>%
+  map(~ scale(.)) %>%
+  as.data.frame() %>%
+  mutate(sub_id = as.factor(working_df$Subject)) %>% # add back subject id
+  pivot_longer(., WM_Task_2bk_Acc: ReadEng_AgeAdj, names_to = "parcel_name",  values_to = "value") %>%
+  filter(abs(value) > 3) %>%
+  count(sub_id)
+outlier_index_behavioral
+
+# index the good subjects 
+#good_sub <- working_df$Subject[!(working_df$Subject %in% outlier_index_neural$sub_id)]
+# rewrite the neural data: 
+#schaefer400_cope11 %>% 
+#  filter(Subject %in% good_sub) %>%
+#  write.csv(., file = "./data/schaefer400_cope11_rm_outlier.csv", row.names = FALSE)
+```
+
+### Parcels have larger effect sizes
+```{r parcel_es, warning = F}
+rm(list = ls())
+
+# load in the COPE11 data with Schaefer400 parcellation scheme applied:
+schaefer400_cope11 <- import(here::here('./data/schaefer400_cope11_rm_outlier.csv')) %>%
+  select(-Subject) # dont care about subject id here
+
+# set up parameters: 
+network_suffix <- c('Cont','Default','DorsAttn','Limbic','SalVentAttn','SomMot','Vis')
+cohenD <- c() # Each parcel's load effect effect size
+networks<- c() # Each parcel's network 
+num <- c() # count the number of parcels in each network 
+for (i in network_suffix) { # i <- 'Cont'
+  num <- append(num, ncol(schaefer400_cope11[,grep(i,colnames(schaefer400_cope11))])) # number of parcels in each network
+  cohenD <- append(cohenD, schaefer400_cope11[,grep(i,colnames(schaefer400_cope11))] %>%
+                     map(~ (mean(.)/sd(.)))) # effect size for each parcel mean of the effect over sd of the data (Poldrack et al., 2017) 
+  networks <- append(networks, rep(i,ncol(schaefer400_cope11[,grep(i,colnames(schaefer400_cope11))]))) # network names 
+}
+
+# create a data frame that has network and effect_size. 
+info_table <- data.frame(array(data=NA, dim = c(400,2)))
+colnames(info_table) <- c("network_name","effect_size")
+info_table$effect_size <- as.numeric(cohenD)
+info_table$network_name <- networks
+
+# change the name for network for plotting purpose
+for (i in 1: length(network_suffix)) {
+  info_table$network_name <- gsub(pattern = network_suffix[i], replacement = paste0(network_suffix[i],"(",num[i],")"), x = info_table$network_name)
+}
+
+# get ready for plotting
+colors = c("steelblue","moccasin","mediumorchid4","indianred3","purple3","springgreen4","tan2") # match the color of the brain network
+info_table %>%
+  mutate(network_name = as.factor(info_table$network_name),
+         network_name = reorder(info_table$network_name, info_table$effect_size, FUN = mean)) %>%
+  ggplot(aes(network_name, effect_size)) + 
+  geom_violin(fill = "gray") + 
+  geom_boxplot(width = 0.2, fill = "white") +
+  #theme(legend.position = "right") +
+  scale_y_continuous(breaks = c(-1,-0.5,0,0.5,1,1.5)) + 
+  scale_x_discrete(limits=c("SomMot(77)","Limbic(26)",
+                            "Vis(61)","Default(91)","SalVentAttn(47)","DorsAttn(46)",
+                            "Cont(52)")) +
+  coord_flip() +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
+  annotate("text", x = 1, y = 1.1, label = "d = 0.8", color = "red") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 13, face ="bold"),
+        axis.text.x = element_text(size = 13, face = "bold", margin = margin(t = 0, r = 0, b = 10, l = 0)),
+        axis.title.y = element_text(size = 13, face = "bold", margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.text.y = element_text(size = 13, color = colors,face = "bold"), 
+        plot.margin = margin(1,1,0,1,"cm")) +
+  ylab("Effect Size") +
+  xlab("Schaefer 7 Networks")
+
+# Stats
+info_table %>%
+  mutate(network_name = as.factor(network_name)) %>%
+  group_by(network_name) %>%
+  summarize(mean_effect_size = mean(effect_size))
+
+```
+
+### Identification of WM-involved networks.
+```{r distinct_network}
+rm(list = ls())
+
+# read in neural and behavioral data
+schaefer400_cope11 <- import(here::here('./data/schaefer400_cope11_rm_outlier.csv'))
+behavioral <- import(here::here('./data/HCP_behavioral_data.csv')) %>%
+  select(Subject, WM_Task_2bk_Acc)
+# join 
+working_df <- inner_join(schaefer400_cope11, behavioral, by = 'Subject') %>% 
+  na.omit()
+
+# ------------------------------------------------------------------------------
+# to identify brain network that is sensitive to within-subject variations
+# ------------------------------------------------------------------------------
+# do a one sample t test for each parcel to identify within network
+within_ttest <- 
+  working_df %>%
+  select(-c(Subject,WM_Task_2bk_Acc)) %>%
+  map(~t.test(., mu = 0, alternative = "two.sided"))
+
+# load activated parcel in the within network
+load_activated_parcel_ttest <- 
+  within_ttest[within_ttest %>% map(~.$statistic) > 0]
+load_activated_parcel <- 
+  load_activated_parcel_ttest[load_activated_parcel_ttest %>% map(~.$p.value) < 0.05/length(within_ttest)] %>%
+  names()
+
+# load deactivated parcel in the within network
+load_deactivated_parcel_ttest <- 
+  within_ttest[within_ttest %>% map(~ .$statistic) < 0]
+load_deactivated_parcel <- 
+  load_deactivated_parcel_ttest[load_deactivated_parcel_ttest %>% map(~.$p.value) < 0.05/length(within_ttest)] %>%
+  names()
+
+# load insensitive parcel 
+load_insensitive_parcel <- colnames(schaefer400_cope11)[-1][! colnames(schaefer400_cope11)[-1] %in% c(load_activated_parcel,load_deactivated_parcel)]
+
+# ------------------------------------------------------------------------------
+# to identify brain network that is sensitive to between-subject variations
+# ------------------------------------------------------------------------------
+
+# parcels activation correlates with behavioral performance (between-network)
+between_cortest_list <- 
+  working_df %>%
+  select(-c(Subject, WM_Task_2bk_Acc)) %>%
+  map(~cor.test(., working_df$WM_Task_2bk_Acc))
+  
+# parcels that are positively correlated with behavior
+beh_pos_cor_parcel_ttest <-
+  between_cortest_list[between_cortest_list %>% map(~ magrittr::extract2(., 4)) > 0]
+beh_pos_cor_parcel_name <-
+  beh_pos_cor_parcel_ttest[beh_pos_cor_parcel_ttest %>% map(~ magrittr::extract2(., 3)) < 0.05/length(between_cortest_list)] %>%
+  names()
+
+# parcels that are negatively correlated with behavior
+beh_neg_cor_parcel_ttest <-
+  between_cortest_list[between_cortest_list %>% map(~ magrittr::extract2(., 4)) < 0]
+beh_neg_cor_parcel_name <-
+  beh_neg_cor_parcel_ttest[beh_neg_cor_parcel_ttest %>% map(~ magrittr::extract2(., 3)) < 0.05/length(between_cortest_list)] %>%
+  names()
+
+# --------------------------------------------------------
+# Check the consistency of the directions of the effects. 
+# --------------------------------------------------------
+# out of 179 parcels exhibiting between-subjects WM effects, how many of them also 
+# sensitive to within-subject difference? 
+# n = 177
+sum(c(beh_pos_cor_parcel_name,beh_neg_cor_parcel_name)  %in% c(load_activated_parcel, load_deactivated_parcel))
+# out of 121 parcels showing positive behavioral correlation, how many are load-activated?
+# n = 113
+sum(beh_pos_cor_parcel_name %in% load_activated_parcel)
+# out of 58 parcels showing negative behavioral correaltion, how many are load-deactivated?
+# n = 58
+sum(beh_neg_cor_parcel_name %in% load_deactivated_parcel)
+
+
+# ---------------------------------------
+# write cifti files for plotting purpose: 
+# ---------------------------------------
+
+
+```
+
