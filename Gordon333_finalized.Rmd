@@ -20,6 +20,7 @@ library(kableExtra)
 #library(Rmisc)
 library(afex)
 library(cocor)
+library(psych)
 ```
 
 ### Check and remove potential outliers (behavioral and neural)
@@ -65,7 +66,7 @@ upper_threshold <-
 
 working_df_copy2 <-data.frame(working_df)
 for (col in (ncol(gordon333_cope11)+1):ncol(working_df)){
-  working_df_copy2[,col] <- ifelse((working_df_copy2[,col] < lower_threshold[col-401]) | (working_df_copy2[,col] > upper_threshold[col-401]), 1, 0)
+  working_df_copy2[,col] <- ifelse((working_df_copy2[,col] < lower_threshold[col-334]) | (working_df_copy2[,col] > upper_threshold[col-334]), 1, 0)
 }
 
 outlier_index_behavioral <- 
@@ -89,7 +90,7 @@ outlier_index_behavioral
 ```{r parcel_es, warning = F}
 rm(list = ls())
 
-# load in the COPE11 data with Schaefer400 parcellation scheme applied:
+# load in the COPE11 data with gordon400 parcellation scheme applied:
 gordon333_cope11 <- import(here::here('./data/gordon333_cope11_rm_outlier.csv')) %>%
   select(-Subject) # dont care about subject id here
 
@@ -299,9 +300,259 @@ n_deactivated <- parcel_count$count[2]
 # is the coupling of the two effect sizes stronger for load-activated parcels? 
 z_diff <- atanh(r_activated) - atanh(r_deactivated)
 z_se <- ((1/(n_activated-3))+(1/(n_deactivated-3)))^0.5
+print(z_diff/z_se)
 2*(1-pnorm(z_diff/z_se))
 
-#2. table
-#3. cifti writing. 
+# ----------------------------------------------
+# Descriptive stats for load-sensitive parcels 
+# ----------------------------------------------
+es_info %>% filter(Parcel_type == "Load-Activated") %>%select(cohenD) %>% describe(.)
+es_info %>% filter(Parcel_type == "Load-Deactivated") %>%select(cohenD) %>% describe(.)
+
+# ----------------------------------------------------------------
+# Descriptive stats for individual difference sensitive parcels
+# ----------------------------------------------------------------
+es_info %>% filter(parcel_names %in% beh_pos_cor_parcel_name) %>%select(coref) %>% describe(.)
+es_info %>% filter(parcel_names %in% beh_neg_cor_parcel_name) %>%select(coref) %>% describe(.)
 
 ```
+
+### Generating Table1
+```{r}
+table <- es_info[order(es_info$rank_cohenD),][1:50,] %>%
+  select(parcel_names, cohenD)
+# add univariate predictive acc
+univariate <- import(here::here('data/univariate_pred_acc/gordon_univariate_pred_acc.csv'))
+table$pred_wm_acc <- univariate$pred_wm
+table$pred_ls_acc <- univariate$pred_ls 
+# add pracel id 
+gordon_order_txt <- import(here::here('data/Gordon333_Key.txt'))
+gordon_order_txt$parcel_name <- paste0(gordon_order_txt$Hemisphere, 
+                                       '_', gordon_order_txt$Network, '_ID', gordon_order_txt$Gordon_Parcel)
+for (row in 1:nrow(table)){ # row = 1
+  table$gordon_id[row] <- gordon_order_txt$Gordon_Parcel[which(gordon_order_txt$parcel_name == table$parcel_names[row])]
+}
+
+# dataframe into table 
+rownames(table) <- NULL
+colnames(table) <- c("Parcel Name", "Load-effect Size", "Univariate predictive accuracy for 2-back performance", 
+                     "Univariate predictive accuracy for list-sorting performance", "Gordon ID" )
+table <- table[c("Parcel Name", "Gordon ID", "Load-effect Size", "Univariate predictive accuracy for 2-back performance",
+                 "Univariate predictive accuracy for list-sorting performance")]
+table %>%
+  kbl(booktabs = T, align = "c") %>%
+  kable_classic_2(full_width = F) %>%
+  column_spec(., 4:5, width = "5cm")
+```
+
+### Write CIFTI for plotting
+```{r}
+
+```
+
+### Load-effect sizes indicates parcel's predictive power
+```{r nested_permutation}
+rm(list = ls())
+# plotting for predictive power per parcel bins: 
+plot_pred_acc_bin <- function(df_name, measure){
+  # load dataframe
+  df_inscanner <- import(here::here(paste0("data/gordon_permutation/",df_name)))
+  # select real_data
+  real_data <- 
+    df_inscanner[1,] %>% 
+    pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+                 values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+    mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Deactivated"))
+  # plotting 
+  plot <-  
+    real_data %>% 
+    ggplot(aes(x = effect_size, y = pred_acc, color = parcel_type)) +
+    geom_point() + 
+    geom_line(aes(group = parcel_type, color = parcel_type)) + 
+    geom_hline(yintercept = df_inscanner$load_insensitive[1], color = "gray", linetype = "dashed") + 
+    ylim(0, df_inscanner$act_13_15[1] + 0.1) + 
+    xlab("Parcel Bins based on ES") + 
+    ylab("Predictive Acc") + 
+    ggtitle(paste0("Predictive accuracy for ", measure)) + 
+    scale_x_discrete(labels=c("01_03" = "(0.1,0.3)", "03_05" = "(0.3,0.5)", "05_07" = "(0.5,0.7)", 
+                              "07_09" = "(0.7,0.9)", "09_11" = "(0.9,1.1)", "11_13" = "(1.1,1.3)",
+                              "13_15" = "(1.3,1.5)")) + 
+    theme_minimal() +
+    theme(axis.title.x = element_text(size = 13, face = 'bold'),
+          axis.text.x = element_text(size = 13, face = 'bold'),
+          axis.title.y = element_text(size = 13, face = "bold"),
+          axis.text.y = element_text(size = 13, face = "bold"), 
+          plot.title = element_text(size = 15, face = "bold"),
+          plot.margin = margin(1,1,0,1,"cm"),
+          legend.position = c(0.2, 0.8)) 
+  return(plot)
+}
+
+# linear trend statistical test: 
+linear_trend_stats <- function(df_name){ #df_name = "gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv"
+  df <- import(here::here(paste0("data/gordon_permutation/",df_name)))
+  # select real_data
+  real_data <- 
+    df[1,] %>% 
+    pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+                 values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+    mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Deactivated"))
+  # linear trend for activated
+  act_real_lt <- real_data %>%
+    filter(parcel_type == "Activated") %>%
+    mutate(effect_size_rank = c(1,2,3,4,5,6,7)) %>%
+    lm(pred_acc ~ effect_size_rank, .) %>% 
+    summary()
+  # linear trend for deactivated
+  deact_real_lt <- real_data %>% 
+    filter(parcel_type == "Deactivated") %>%
+    mutate(effect_size_rank = c(1,2,3,4)) %>% 
+    lm(pred_acc ~ effect_size_rank, .) %>% 
+    summary()
+  # null linear trend coefficient for activated bins
+  null_coef_act <- c()
+  for (row in 2:1001){
+    mat <- matrix(c(as.numeric(df[row,1:7]), c(1,2,3,4,5,6,7)), ncol = 2)
+    null_lt <- lm(mat[,1]~ mat[,2]) %>% summary()
+    null_coef_act <- append(null_coef_act, null_lt$coefficients[2,1])
+  }
+  # null linear trend coefficient for deactivated bins
+  null_coef_deact <- c()
+  for (row in 2:1001){
+    mat <- matrix(c(as.numeric(df[row,8:11]), c(1,2,3,4)), ncol = 2)
+    null_lt <- lm(mat[,1]~ mat[,2]) %>% summary()
+    null_coef_deact <- append(null_coef_deact, null_lt$coefficients[2,1])
+  }
+  # compute p-values for the observed linear trend coefficients. 
+  act_real_lt_p <- (1- pnorm((act_real_lt$coefficients[2,1] - mean(null_coef_act))/sd(null_coef_act)))*2
+  deact_real_lt_p <- (1- pnorm((deact_real_lt$coefficients[2,1] - mean(null_coef_deact))/sd(null_coef_deact)))*2
+  
+  print(paste0("Act linear trend coefficient is ", act_real_lt$coefficients[2,1], "and its P values is ", act_real_lt_p))
+  print(paste0("Deact linear trend coefficient is ", deact_real_lt$coefficients[2,1], "and its P values is ", deact_real_lt_p))
+}
+
+# compare load-activated and load-deactivated parcels given the same effect size. 
+compare_pred_acc_bins <- function(df_name){ # df_name = "gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv"
+  
+  # load data 
+  df <- import(here::here(paste0("data/gordon_permutation/",df_name)))
+  # extract bins to be compared with 
+  real <- data.frame("activated" = as.numeric(df[1,1:4]),
+                     "deactivated" = as.numeric(df[1,8:11]),
+                     "insensitive" = rep(as.numeric(df[1,12]), 4)) %>%
+    mutate(act_minus_deactivated = activated - deactivated,
+           deactivated_minus_insensitive = deactivated - insensitive,
+           activated_minus_insensitive = activated - insensitive) %>%
+    select(act_minus_deactivated, deactivated_minus_insensitive, activated_minus_insensitive)
+  
+  # build null distribution
+  null_01_03 <- c()
+  null_03_05 <- c()
+  null_05_07 <- c()
+  null_07_09 <- c()
+  for (row in 2:1001){ # row = 2
+      mat <- data.frame("activated" = as.numeric(df[row,1:4]),
+                         "deactivated" = as.numeric(df[row,8:11]),
+                         "insensitive" = rep(as.numeric(df[row,12]), 4)) %>%
+        mutate(act_minus_deactivated = activated - deactivated,
+               deactivated_minus_insensitive = deactivated - insensitive,
+               activated_minus_insensitive = activated - insensitive) %>%
+        select(act_minus_deactivated, deactivated_minus_insensitive, activated_minus_insensitive)
+      # build null distribution for the differences of load-activated and deactivated bins
+      null_01_03 <- append(null_01_03, mat$act_minus_deactivated[1])
+      null_03_05 <- append(null_03_05, mat$act_minus_deactivated[2])
+      null_05_07 <- append(null_05_07, mat$act_minus_deactivated[3])
+      null_07_09 <- append(null_07_09, mat$act_minus_deactivated[4])
+  } 
+  
+  
+  # compute p values: 
+  p_01_03 <- (1- pnorm(abs(real$act_minus_deactivated[1] - mean(null_01_03))/sd(null_01_03)))*2
+  p_03_05 <- (1- pnorm(abs(real$act_minus_deactivated[2] - mean(null_03_05))/sd(null_03_05)))*2
+  p_05_07 <- (1- pnorm(abs(real$act_minus_deactivated[3] - mean(null_05_07))/sd(null_05_07)))*2
+  p_07_09 <- (1- pnorm(abs(real$act_minus_deactivated[4] - mean(null_07_09))/sd(null_07_09)))*2
+
+  print(paste0("Difference in bin 01_03 is ", real$act_minus_deactivated[1], "P value is ",  p_01_03))
+  print(paste0("Difference in bin 03_05 is ", real$act_minus_deactivated[2], "P value is ",  p_03_05))
+  print(paste0("Difference in bin 05_07 is ", real$act_minus_deactivated[3], "P value is ",  p_05_07))
+  print(paste0("Difference in bin 07_09 is ", real$act_minus_deactivated[4], "P value is ",  p_07_09))
+  
+}
+
+
+# WM_Task_2bk_Acc
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv", "2-back task")
+linear_trend_stats("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv")
+compare_pred_acc_bins("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv")
+
+# PicVocab_AgeAdj
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv", "Pic-vocab task")
+linear_trend_stats("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv")
+compare_pred_acc_bins("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv")
+
+# PMAT24_A_CR
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv", "PMAT task")
+linear_trend_stats("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv")
+compare_pred_acc_bins("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv")
+
+# ReadEng_AgeAdj
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv", "Reading-cog task")
+linear_trend_stats("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv")
+compare_pred_acc_bins("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv")
+
+# ListSort_AgeAdj
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv", "List-sort task")
+linear_trend_stats("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv")
+compare_pred_acc_bins("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv")
+```
+
+### Use load-effect to guide feature selection
+```{r}
+rm(list = ls())
+
+plot_feature_selection <- function(df_dir){ # df_dir = "gordon_feature_selection_permutation_WM_Task_2bk_Acc.csv"
+  # read in data
+  df <- import(here::here(paste0("data/gordon_permutation/", df_dir)))
+  # extract null 
+  null <- df %>%
+    mutate(idx = seq(1,60)) %>%
+    select(lower, mean, upper, idx)
+  # plot
+  plot <- 
+    df %>%
+      ggplot(aes(x = idx, y = observed)) + 
+      geom_point(aes(color = parcel_type), size = 2) + 
+      geom_line(color = "black", size = 1) + 
+      geom_point(data = null, aes(x = idx, y = mean), alpha = 0.1, color = "gray1") + 
+      geom_line(data = null, aes(x = idx, y = mean), color = "gray1", alpha = 0.1) +
+      geom_ribbon(data = null, aes(x = idx, ymin = lower, ymax = upper), fill = "gray1", 
+                  linetype = 2, alpha = 0.1, inherit.aes = F) + 
+      theme_minimal() + 
+      ylab("Predictive Acc") + 
+      xlab("Top n parcels \n (Based on CohenD)") + 
+      scale_x_continuous(breaks=seq(0, 60, 10))+ 
+      theme(axis.title.x = element_text(size = 13, face = 'bold'),
+            axis.text.x = element_text(size = 10, face = 'bold'),
+            axis.title.y = element_text(size = 13, face = "bold"),
+            axis.text.y = element_text(size = 13, face = "bold"), 
+            strip.text.x = element_text(size = 13, face = "bold"),
+            plot.margin = margin(1,1,0,1,"cm"),
+            legend.position = "none",
+            legend.title = element_blank()) 
+  
+  return(plot)
+}
+
+# WM_Task_2bk_Acc
+plot_feature_selection("gordon_feature_selection_permutation_WM_Task_2bk_Acc.csv")
+# PicVocab_AgeAdj
+plot_feature_selection("gordon_feature_selection_permutation_PicVocab_AgeAdj.csv")
+# PMAT24_A_CR
+plot_feature_selection("gordon_feature_selection_permutation_PMAT24_A_CR.csv")
+# ReadEng_AgeAdj
+plot_feature_selection("gordon_feature_selection_permutation_ReadEng_AgeAdj.csv")
+# ListSort_AgeAdj
+plot_feature_selection("gordon_feature_selection_permutation_ListSort_AgeAdj.csv")
+
+```
+

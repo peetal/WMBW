@@ -12,14 +12,13 @@ library(rio)
 library(tidyverse)
 library(sjmisc)
 library(DescTools)
-library(tidymodels)
 library(janitor)
 library(magrittr)
 library(doParallel)
 library(kableExtra)
 #library(Rmisc)
 library(afex)
-library(cocor)
+library(psych)
 ```
 
 ### Check and remove potential outliers (behavioral and neural)
@@ -294,12 +293,54 @@ n_deactivated <- parcel_count$count[2]
 # is the coupling of the two effect sizes stronger for load-activated parcels? 
 z_diff <- atanh(r_activated) - atanh(r_deactivated)
 z_se <- ((1/(n_activated-3))+(1/(n_deactivated-3)))^0.5
+print(z_diff/z_se)
 2*(1-pnorm(z_diff/z_se))
 
-#2. table
-#3. cifti writing. 
+# ----------------------------------------------
+# Descriptive stats for load-sensitive parcels 
+# ----------------------------------------------
+es_info %>% filter(Parcel_type == "Load-Activated") %>%select(cohenD) %>% describe(.)
+es_info %>% filter(Parcel_type == "Load-Deactivated") %>%select(cohenD) %>% describe(.)
+
+# ----------------------------------------------------------------
+# Descriptive stats for individual difference sensitive parcels
+# ----------------------------------------------------------------
+es_info %>% filter(parcel_names %in% beh_pos_cor_parcel_name) %>%select(coref) %>% describe(.)
+es_info %>% filter(parcel_names %in% beh_neg_cor_parcel_name) %>%select(coref) %>% describe(.)
 
 ```
+
+### Generating Table1
+```{r}
+table <- es_info[order(es_info$rank_cohenD),][1:50,] %>%
+  select(parcel_names, cohenD)
+# add univariate predictive acc
+univariate <- import(here::here('data/univariate_pred_acc/schaefer_univariate_pred_acc.csv'))
+table$pred_wm_acc <- univariate$pred_wm
+table$pred_ls_acc <- univariate$pred_ls 
+# add pracel id 
+schaefer_order_txt <- import(here::here('data/Schaefer400_7networks_parcel_order.txt'))
+for (row in 1:nrow(table)){
+  table$shaefer_id[row] <- schaefer_order_txt$order[which(schaefer_order_txt$parcel_name == table$parcel_names[row])]
+}
+
+# dataframe into table 
+rownames(table) <- NULL
+colnames(table) <- c("Parcel Name", "Load-effect Size", "Univariate predictive accuracy for 2-back performance", 
+                     "Univariate predictive accuracy for list-sorting performance", "Schaefer ID" )
+table <- table[c("Parcel Name", "Schaefer ID", "Load-effect Size", "Univariate predictive accuracy for 2-back performance",
+                 "Univariate predictive accuracy for list-sorting performance")]
+table %>%
+  kbl(booktabs = T, align = "c") %>%
+  kable_classic_2(full_width = F) %>%
+  column_spec(., 4:5, width = "5cm")
+```
+
+### Write CIFTI for plotting
+```{r}
+
+```
+
 
 ### Load-effect sizes indicates parcel's predictive power
 ```{r nested_permutation}
