@@ -139,19 +139,207 @@ info_table %>%
   geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
   annotate("text", x = 3, y = 1.1, label = "d = 0.8", color = "red") +
   theme_minimal() +
-  theme(axis.title.x = element_text(size = 17, face ="bold"),
-        axis.text.x = element_text(size = 13),
-        axis.title.y = element_text(size = 17, face = "bold"),
-        axis.text.y = element_text(size = 13,color = colors,face = "bold"), 
-        plot.margin = margin(1,1,0,1,"cm")) +
+  theme(axis.title.x = element_text(size = 10, face ="bold"),
+        axis.text.x = element_text(size = 10, face = "bold", margin = margin(t = 0, r = 0, b = 10, l = 0)),
+        axis.title.y = element_text(size = 10, face = "bold", margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.text.y = element_text(size = 10, color = colors,face = "bold"), 
+        plot.margin = margin(0,0,0,0,"cm")) +
   ylab("Effect Size") +
-  xlab("Gordon Networks")
+  xlab("Gordon Networks") #+ 
+  #ggsave("plots/suppmat/gordon_es_parcel.svg", width=4.5, height=3)
 
 # Stats
 info_table %>%
   mutate(network_name = as.factor(network_name)) %>%
   group_by(network_name) %>%
-  summarize(mean_effect_size = mean(effect_size))
+  summarize(mean_effect_size = mean(effect_size),
+            sd_effect_size = sd(effect_size))
+
+```
+
+```{r vertex_es, warning = F}
+# -----------------------------------
+# get vertex index for each network 
+# -----------------------------------
+# rm(list=ls())
+# 
+# in_path <- "/Users/peetal/Documents/Honor_project/GordonParcelTemplate/Parcels/"
+# out.path <- "/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/";
+# g.key <- read.csv("/Users/peetal/Documents/Honor_project/GordonParcelTemplate/Parcels.csv", stringsAsFactors=FALSE); # which parcels in each community; 
+# setwd("/Users/peetal/Documents/Honor_project/workbench/bin_macosx64/")
+# 
+# # make a text version of the Gordon atlas - parcel assignment for each vertex
+# dt.fname <- paste0(out.path, "Gordon_Parcels_LR.dtseries.txt");
+# if (!file.exists(dt.fname)) { 
+#   in.fname <- paste0(in_path, "Parcels_LR.dtseries.nii");     # part of the Gordon atlas download
+#   if (!file.exists(in.fname)) { stop(paste("missing:", in.fname)); }
+#   system(paste0("./wb_command -cifti-convert -to-text ", in.fname, " ", dt.fname));   # call the  wb_command function
+# }
+# in.dt <- read.table(dt.fname)[,1];   # just one column in the file
+# 
+# # each community has a different number of component parcels, and vertices in each parcel.
+# # make a single file for each community listing *all* of its vertices.
+# networks <- c("RetrosplenialTemporal","Auditory","SMmouth","SMhand","Visual","None","Default",
+#               "CinguloParietal","VentralAttn","CinguloOperc","Salience","DorsalAttn","FrontoParietal")
+# for (do.comm in networks) {   
+#   for (do.hem in c("L", "R")) {   # do.comm <- "Visual"; do.hem <- "L";
+#     need.parcels <- g.key$ParcelID[which(g.key$Community == do.comm & g.key$Hem == do.hem)];  # parcels for this community & hemisphere
+#     
+#     # vertices (cifti rows) for each of these parcels
+#     fout <- file(paste0(out.path, do.comm, "_", do.hem, "_ciftirows.txt"), 'wt');   # start a blank text file for writing
+#     for (pid in 1:length(need.parcels)) {   # pid <- 1;
+#       inds <- which(in.dt == need.parcels[pid]);   # rows of the cifti for parcel need.parcel[pid] only
+#       for (i in 1:length(inds)) { cat(inds[i], file=fout, sep="\n"); }    # write out a line with each row number
+#     }
+#     close(fout); unlink(fout);    # let go of the file
+#   }
+# }
+# 
+# # -------------------------------------------------------------------------
+# # get vertex level neural data (COPE11) for each subject, for each network 
+# # -------------------------------------------------------------------------
+# 
+# # important parameters
+# in_path <- "/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/";   # _ciftirows.txt files, cope and id keys, etc.
+# out_path <- "/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/";   # files written out to here                       
+# comm_ids <- networks; 
+# hem_ids <- c("L", "R");   
+# 
+# 
+# # subject IDs
+# ids <- import(here::here('./data/gordon333_cope11_rm_outlier.csv')) %>%
+#   select(Subject) %>% unname() %>% unlist()
+# missing_id <- 0
+# 
+# 
+# for (cid in 1:length(comm_ids)) { #for each network #cid = 1
+#   if (!dir.exists(paste0(in_path, "Gordon/",comm_ids[cid]))){ # if sub-folders for the network does not exist 
+#     dir.create(paste0(in_path, "Gordon/",comm_ids[cid]))
+#   }
+#   for (sub in 1:length(ids)) { #for each subject #sub = 2
+#     
+#     vertex_fname <- paste0(out_path, "cope11_vertex_dat/", ids[sub], "_s1200_WMcope11s.txt")
+#     if (!file.exists(vertex_fname)) { missing_id <- missing_id + 1; next; }
+#     
+#     sub_L_R <- c()
+#     for (hid in 1:length(hem_ids)) {   # for each hemisphere hid = 1;
+#       # get the rows of the text-ized cifti for this community and hemisphere
+#       fname <- paste0(in_path, "Gordon/", comm_ids[cid], "_", hem_ids[hid], "_ciftirows.txt");  
+#       if (!file.exists(fname)) { stop(paste("missing:", fname)); }
+#       need_rows <- read.table(fname)[,1];   # read in the file, just keeping the first column
+#       
+#       # get COPE data:
+#       vertex <- read.table(vertex_fname)[,1]
+#       sub_L_R <- append(sub_L_R, vertex[need_rows])
+#     }
+#     
+#     # write out data
+#     sub_out_tbl <- array(NA, c(1, length(sub_L_R)));   # blank table to hold the values we need to keep
+#     rownames(sub_out_tbl) <- "cope11";
+#     colnames(sub_out_tbl) <- paste0("v", 1:length(sub_L_R));
+#     sub_out_tbl[1,] <- sub_L_R
+#     out_fname <- paste0(out_path, "Gordon/", comm_ids[cid], "/", ids[sub], "_", comm_ids[cid], "_cope11s.txt")
+#     write.table(sub_out_tbl, out_fname)
+#   }
+# }
+# 
+# # --------------------
+# # compute effect size
+# # --------------------
+# 
+# # function that computes vertex level effect size for a given network
+# vertex_level_es <- function(dir) { # dir <- "/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/FrontoParietal/"
+#   
+#   data_from_dir <- Sys.glob(paste0(dir, '*.txt')) # all vertex within this network
+#   nVertex <- ncol(read.table(data_from_dir[1])) # number of vertices in this network
+#   nSub <- length(data_from_dir) # number of subjects 
+#   network_vertex_data <- data.frame(array(NA, c(nSub, nVertex + 1))) # create an empty dataframe
+#   
+#   for (i in 1:length(data_from_dir)){ # i = 1
+#   
+#     sub_id <- unlist(str_split(unlist(str_split(data_from_dir[i], "/"))[10],"_"))[1] # subject id
+#     network_vertex_data[i,1] <- sub_id # add subject id to the dataframe
+#   
+#     sub_data <- read.table(data_from_dir[i]) # extract in neural data 
+#     network_vertex_data[i,1:nVertex + 1] <- sub_data[1,] %>% unname() %>% unlist() # extract in neural data 
+#   }                                 
+#   
+#   # compute load effect size for all the vertices
+#   cohenD <- network_vertex_data %>%
+#     select(-X1) %>%
+#     map_dbl(~ (mean(.)/sd(.))) # effect size for each parcel mean of the effect over sd of the data (Poldrack et al., 2017) 
+#   
+#   return(cohenD)
+# }
+# 
+# 
+# RetrosplenialTemporal_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/RetrosplenialTemporal/")
+# Auditory_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/Auditory/")
+# SMmouth_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/SMmouth/")
+# SMhand_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/SMhand/")
+# Visual_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/Visual/")
+# None_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/None/")
+# Default_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/Default/")
+# CinguloParietal_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/CinguloParietal/")
+# VentralAttn_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/VentralAttn/")
+# CinguloOperc_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/CinguloOperc/")
+# Salience_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/Salience/")
+# DorsalAttn_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/DorsalAttn/")
+# FrontoParietal_es <- vertex_level_es("/Users/peetal/Documents/Honor_project/Schaefer/vertex_level_data/Gordon/FrontoParietal/")
+# 
+# df <- data.frame (network  = c(rep("RetrosplenialTemporal", length(RetrosplenialTemporal_es)),
+#                                rep("Auditory", length(Auditory_es)),
+#                                rep("SMmouth", length(SMmouth_es)),
+#                                rep("SMhand", length(SMhand_es)),
+#                                rep("Visual", length(Visual_es)),
+#                                rep("None", length(None_es)),
+#                                rep("Default", length(Default_es)),
+#                                rep("CinguloParietal", length(CinguloParietal_es)),
+#                                rep("VentralAttn", length(VentralAttn_es)),
+#                                rep("CinguloOperc", length(CinguloOperc_es)),
+#                                rep("Salience", length(Salience_es)),
+#                                rep("DorsalAttn", length(DorsalAttn)),
+#                                rep("FrontoParietal", length(FrontoParietal_es))),
+#                   es = c(RetrosplenialTemporal_es, Auditory_es, SMmouth_es, SMhand_es, Visual_es, None_es, Default_es,
+#                          CinguloParietal_es, VentralAttn_es, CinguloOperc_es, Salience_es, DorsalAttn, FrontoParietal_es))
+
+# write.csv(df,"/Users/peetal/Documents/GitHub/WMBW/data/Gordon_vertex_es.csv", row.names = F)
+
+gordon_vertex <- import(here::here("data/Gordon_vertex_es.csv"))
+# get ready for plotting
+colors = c("wheat1","darkorchid1","orange","cyan","blue","snow2","chartreuse1",
+           "pink","black","aquamarine3","purple3","red","yellow") # match the color of the brain network
+gordon_vertex %>%
+  mutate(network_name = as.factor(gordon_vertex$network)) %>%
+  ggplot(aes(x = network, y = es)) + 
+  geom_violin(fill = "gray") + 
+  geom_boxplot(width = 0.2, fill = "white") +
+  theme(legend.position = "none") +
+  scale_y_continuous(breaks = c(-1,-0.5,0,0.5,1,1.5)) + 
+  scale_x_discrete(limits=c("RetrosplenialTemporal","Auditory",
+                            "SMmouth","SMhand","Visual","None",
+                            "Default","CinguloParietal","VentralAttn",
+                            "CinguloOperc","Salience","DorsalAttn","FrontoParietal"
+                            )) +
+  ylim(c(-1,1.5)) +
+  coord_flip() +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "red") +
+  annotate("text", x = 3, y = 1.1, label = "d = 0.8", color = "red") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 10, face ="bold"),
+        axis.text.x = element_text(size = 10, face = "bold", margin = margin(t = 0, r = 0, b = 10, l = 0)),
+        axis.title.y = element_text(size = 10, face = "bold", margin = margin(t = 0, r = 10, b = 0, l = 0)),
+        axis.text.y = element_text(size = 10, color = colors,face = "bold"), 
+        plot.margin = margin(0,0,0,0,"cm")) +
+  ylab("Effect Size") +
+  xlab("Gordon Networks") #+
+  #ggsave("plots/suppmat/gordon/gordon_es_vertex.svg", width=4.5, height=3)
+
+gordon_vertex %>%
+  mutate(network = as.factor(network)) %>%
+  group_by(network) %>%
+  summarize(mean_effect_size = mean(es),
+            sd_effect_size = sd(es))
 
 ```
 
@@ -249,7 +437,7 @@ es_info$coref <-
 es_info <- es_info %>%
   mutate(rank_cohenD = 334 - rank(abs(es_info$cohenD)),
          rank_coref = 334 - rank(abs(es_info$coref)),
-         Parcel_type = ifelse(es_info$parcel_names %in% load_activated_parcel, 'Load-Activated', ifelse(es_info$parcel_names %in% load_deactivated_parcel, 'Load-Deactivated','Load-Insensitive')))
+         Parcel_type = ifelse(es_info$parcel_names %in% load_activated_parcel, 'Activated', ifelse(es_info$parcel_names %in% load_deactivated_parcel, 'Deactivated','Insensitive')))
 
 # get all parcels names in either load-activated network or between network, plot the two rank for these parcels
 colors = c("red","blue","grey")
@@ -260,16 +448,17 @@ es_info %>%
   geom_smooth(method = 'lm', se = F) + 
   scale_color_manual(values = colors) + 
   theme_minimal() +
-  theme(axis.title.x = element_text(size = 13, face ="bold"),
-        axis.text.x = element_text(size = 10),
-        axis.title.y = element_text(size = 13, face = "bold"),
-        axis.text.y = element_text(size = 10, face = "bold"), 
-        strip.text.x = element_text(size = 13, face = "bold"),
-        plot.margin = margin(1,1,0,1,"cm"),
+  theme(axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 6),
+        axis.title.y = element_text(size = 10),
+        axis.text.y = element_text(size = 6), 
+        strip.text.x = element_text(size = 8),
+        plot.margin = margin(0,0,0,0,"cm"),
         legend.title = element_blank(),
         legend.position = 'None') +
   xlab("Within-subject effect rank \n(rank of |Cohen's d|)") +
-  ylab("Between-subject effect rank \n(rank of |r|)")  
+  ylab("Between-subject effect rank \n(rank of |r|)") #+
+  #ggsave("plots/suppmat/gordon/rank_cor.svg", width=3.3, height=2.8)
 
 # --------------------------------------------------------------------------------------
 # compute Spearman correlation coefficient of the rank orders of the two effect sizes. 
@@ -303,17 +492,118 @@ z_se <- ((1/(n_activated-3))+(1/(n_deactivated-3)))^0.5
 print(z_diff/z_se)
 2*(1-pnorm(z_diff/z_se))
 
-# ----------------------------------------------
-# Descriptive stats for load-sensitive parcels 
-# ----------------------------------------------
-es_info %>% filter(Parcel_type == "Load-Activated") %>%select(cohenD) %>% describe(.)
-es_info %>% filter(Parcel_type == "Load-Deactivated") %>%select(cohenD) %>% describe(.)
-
 # ----------------------------------------------------------------
 # Descriptive stats for individual difference sensitive parcels
 # ----------------------------------------------------------------
 es_info %>% filter(parcel_names %in% beh_pos_cor_parcel_name) %>%select(coref) %>% describe(.)
 es_info %>% filter(parcel_names %in% beh_neg_cor_parcel_name) %>%select(coref) %>% describe(.)
+
+```
+### Load-effect sizes indicates parcel’s univariate predictive power
+```{r}
+# -----------------------------------------------------------------------------
+# Relationship between load-related effect size and univariate predictive power 
+# -----------------------------------------------------------------------------
+# univariate pred acc:
+schaefer_uni_pred_acc <- import(here::here('data/univariate_pred_acc/gordon_univariate_pred_acc_all_parcel.csv')) %>%
+  rename(parcel_names = parcel_name) %>%
+  select(parcel_names, pred_wm) 
+  
+# top and bottom 30 load-act parcels
+es_info2_load_act <- inner_join(schaefer_uni_pred_acc, es_info, by="parcel_names") %>% 
+  filter(Parcel_type == "Activated") %>%
+  arrange(desc(cohenD))
+
+load_act_tail_30 <- 
+  es_info2_load_act %>% top_n(30, rank_cohenD) %>% select(parcel_names) %>% unname() %>% unlist() %>% as.vector()
+load_act_head_30 <- 
+  es_info2_load_act %>% top_n(-30, rank_cohenD) %>% select(parcel_names) %>% unname() %>% unlist() %>% as.vector()
+es_info2_load_act <- es_info2_load_act %>%
+  filter(parcel_names %in% c(load_act_tail_30, load_act_head_30))
+parcel_act_order <- c(load_act_head_30, rep(" ",5), load_act_tail_30)
+  
+# top and bottom 30 load-deact parcels
+es_info2_load_deact <- inner_join(schaefer_uni_pred_acc, es_info, by="parcel_names") %>% 
+  filter(Parcel_type == "Deactivated") %>% 
+  arrange(cohenD)
+
+load_deact_tail_30 <- 
+  es_info2_load_deact %>% top_n(30, rank_cohenD) %>% select(parcel_names) %>% unname() %>% unlist() %>% as.vector()
+load_deact_head_30 <- 
+  es_info2_load_deact %>% top_n(-30, rank_cohenD) %>% select(parcel_names) %>% unname() %>% unlist() %>% as.vector()
+es_info2_load_deact <- es_info2_load_deact %>%
+  filter(parcel_names %in% c(load_deact_tail_30, load_deact_head_30))
+parcel_deact_order <- c(load_deact_head_30, rep(" ",5), load_deact_tail_30)
+
+
+es_info2_load_act %>%
+  mutate(parcel_names = factor(parcel_names)) %>%
+  ggplot(aes(x = parcel_names, y = pred_wm)) + 
+  geom_bar(aes(fill = Parcel_type), stat='identity') + 
+  theme_classic() +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_text(size = 10, face = "bold"),
+        axis.text.y = element_text(size = 8, face = "bold"), 
+        axis.title.x = element_text(size = 10, face = "bold"),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.title = element_blank(),
+        legend.position = 'None') +
+  scale_x_discrete(limits=parcel_act_order) +
+  ylim(-0.12,0.5) + 
+  ylab("Predictive power") + 
+  xlab("Cohen's d") #+ 
+  #ggsave("plots/suppmat/gordon/load_act_univariate.svg", width=3.3, height=1.9)
+
+# correlation between cohenD and univariate predictive power 
+cor.test(es_info2_load_act$cohenD, es_info2_load_act$pred_wm)
+# mean cohenD and mean univariate predictive power for top and bottom 20 parcels
+es_info2_load_act %>%
+  filter(rank_cohenD < 40) %>%
+  mutate(mean_cohend = mean(cohenD),
+         mean_pred_wm = mean(pred_wm)) %>%
+  select(mean_cohend, mean_pred_wm) %>% unique()
+es_info2_load_act %>%
+  filter(rank_cohenD > 40) %>%
+  mutate(mean_cohend = mean(cohenD),
+         mean_pred_wm = mean(pred_wm)) %>%
+  select(mean_cohend, mean_pred_wm) %>% unique()
+
+
+es_info2_load_deact %>%
+  mutate(parcel_names = factor(parcel_names)) %>%
+  ggplot(aes(x = parcel_names, y = pred_wm)) + 
+  geom_bar(aes(fill = Parcel_type), stat='identity', fill = "dodgerblue3") + 
+  theme_classic() +
+  theme(axis.title.y = element_text(size = 10, face = "bold"),
+        axis.title.x = element_text(size = 10, face = "bold"),
+        axis.text.y = element_text(size = 8, face = "bold"), 
+        axis.text.x=element_blank(),
+        axis.ticks.x = element_blank(),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.title = element_blank(),
+        legend.position = 'None') +
+  scale_x_discrete(limits=parcel_deact_order) +
+  ylim(-0.12,0.5) + 
+  ylab("Predictive power") + 
+  xlab("Cohen's d") #+ 
+  #ggsave("plots/suppmat/gordon/load_deact_univariate.svg", width=3.3, height=1.9)
+
+# correlation between cohenD and univariate predictive power 
+cor.test(es_info2_load_deact$cohenD, es_info2_load_deact$pred_wm)
+# mean cohenD and mean univariate predictive power for top and bottom 20 parcels
+es_info2_load_deact %>%
+  filter(rank_cohenD < 40) %>%
+  mutate(mean_cohend = mean(cohenD),
+         mean_pred_wm = mean(pred_wm)) %>%
+  select(mean_cohend, mean_pred_wm) %>% unique()
+es_info2_load_deact %>%
+  filter(rank_cohenD > 40) %>%
+  mutate(mean_cohend = mean(cohenD),
+         mean_pred_wm = mean(pred_wm)) %>%
+  select(mean_cohend, mean_pred_wm) %>% unique()
+
+
 
 ```
 
@@ -324,7 +614,7 @@ table <- es_info[order(es_info$rank_cohenD),][1:50,] %>%
 # add univariate predictive acc
 univariate <- import(here::here('data/univariate_pred_acc/gordon_univariate_pred_acc.csv'))
 table$pred_wm_acc <- univariate$pred_wm
-table$pred_ls_acc <- univariate$pred_ls 
+#table$pred_ls_acc <- univariate$pred_ls 
 # add pracel id 
 gordon_order_txt <- import(here::here('data/Gordon333_Key.txt'))
 gordon_order_txt$parcel_name <- paste0(gordon_order_txt$Hemisphere, 
@@ -335,18 +625,92 @@ for (row in 1:nrow(table)){ # row = 1
 
 # dataframe into table 
 rownames(table) <- NULL
-colnames(table) <- c("Parcel Name", "Load-effect Size", "Univariate predictive accuracy for 2-back performance", 
-                     "Univariate predictive accuracy for list-sorting performance", "Gordon ID" )
-table <- table[c("Parcel Name", "Gordon ID", "Load-effect Size", "Univariate predictive accuracy for 2-back performance",
-                 "Univariate predictive accuracy for list-sorting performance")]
+colnames(table) <- c("Parcel Name", "Load-effect Size", "Univariate predictive accuracy for 2-back performance", "Gordon ID" )
+table <- table[c("Parcel Name", "Gordon ID", "Load-effect Size", "Univariate predictive accuracy for 2-back performance")]
+
 table %>%
   kbl(booktabs = T, align = "c") %>%
   kable_classic_2(full_width = F) %>%
-  column_spec(., 4:5, width = "5cm")
+  column_spec(., 4, width = "5cm")
 ```
+
 
 ### Write CIFTI for plotting
 ```{r}
+source('/Users/peetal/Documents/Honor_project/Schaefer/func/write_gordon_cifti.R') 
+#  load in order
+gordon_order_txt <- import(here::here('data/Gordon333_Key.txt'))
+gordon_order <- c()
+for (i in 1:nrow(gordon_order_txt)){ # i = 1
+  gordon_parcel <- paste0(gordon_order_txt$Hemisphere[i], '_', gordon_order_txt$Network[i], '_ID', gordon_order_txt$Gordon_Parcel[i])
+  gordon_order <- append(gordon_order, gordon_parcel)
+}
+
+# ---------------------------
+# within-subject effect size 
+# ---------------------------
+outvec <- c()
+for (i in gordon_order){ # i = 'LH_Vis_1'
+  if (i %in% c(load_activated_parcel, load_deactivated_parcel)){
+    outvec <- append(outvec, es_info$cohenD[which(es_info$parcel_names == i)])
+  } else{
+    outvec <- append(outvec, 0)
+  }
+}
+#write.table(outvec, "/Users/peetal/Documents/Honor_project/Schaefer/working/schaefer400/outvec_txt/gordon_within_subject_effect.txt", col.names=FALSE,row.names=FALSE)
+#write_gordon333_pscalar('gordon_within_subject_effect.txt', 'gordon_within_subject_effect.pscalar.nii')
+
+# -----------------------------
+# between-subject effects size 
+# -----------------------------
+outvec <- c()
+for (i in gordon_order){ # i = 'LH_Vis_1'
+  if (i %in% c(beh_pos_cor_parcel_name, beh_neg_cor_parcel_name)){
+    outvec <- append(outvec, es_info$coref[which(es_info$parcel_names == i)])
+  } else{
+    outvec <- append(outvec, 0)
+  }
+}
+#write.table(outvec, '/Users/peetal/Documents/Honor_project/Schaefer/working/schaefer400/outvec_txt/gordon_between_subject_effect.txt', col.names=FALSE,row.names=FALSE)
+#write_gordon333_pscalar('gordon_between_subject_effect.txt', 'gordon_between_subject_effect.pscalar.nii')
+
+# ----------------------------------
+# spatial distribution of rank diff
+# ----------------------------------
+es_info <-  es_info %>%
+  mutate(rank_diff = rank_coref - rank_cohenD) %>%
+  mutate(rank_diff = scale(rank_diff))
+
+outvec <- c()
+for (i in gordon_order){ # i = 'LH_Vis_1'
+  outvec <- append(outvec,es_info[which(es_info$parcel_names == i),]$rank_diff)
+}
+
+#write.table(outvec, '/Users/peetal/Documents/Honor_project/Schaefer/working/schaefer400/outvec_txt/gordon_parcels_es_diff.txt', col.names=FALSE,row.names=FALSE)
+#write_gordon333_pscalar('gordon_parcels_es_diff.txt', 'gordon_parcels_es_diff.pscalar.nii')
+
+
+# ---------------
+# top 30 parcels: 
+# ---------------
+top_30_parcels <- es_info[order(es_info$rank_cohenD),][1:30,] %>% select(parcel_names) %>% unlist() %>% unname()
+top_5_parcels <- top_30_parcels[1:5]
+
+outvec <- c()
+for (i in gordon_order){ # i = 'LH_Vis_1'
+  if (i %in% top_30_parcels){
+    if (i %in% top_5_parcels){
+      outvec <- append(outvec,2)
+    } else {
+      outvec <- append(outvec,1)
+    }
+  } else{
+    outvec <- append(outvec,0)
+  }
+}
+
+#write.table(outvec, '/Users/peetal/Documents/Honor_project/Schaefer/working/schaefer400/outvec_txt/gordon_top_30.txt', col.names=FALSE,row.names=FALSE)
+#write_gordon333_pscalar('gordon_top_30.txt', 'gordon_top_30.pscalar.nii')
 
 ```
 
@@ -364,28 +728,28 @@ plot_pred_acc_bin <- function(df_name, measure){
                  values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
     mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Deactivated"))
   # plotting 
-  plot <-  
-    real_data %>% 
+  real_data %>% 
     ggplot(aes(x = effect_size, y = pred_acc, color = parcel_type)) +
     geom_point() + 
     geom_line(aes(group = parcel_type, color = parcel_type)) + 
     geom_hline(yintercept = df_inscanner$load_insensitive[1], color = "gray", linetype = "dashed") + 
     ylim(0, df_inscanner$act_13_15[1] + 0.1) + 
-    xlab("Parcel Bins based on ES") + 
+    xlab("") + 
     ylab("Predictive Acc") + 
-    ggtitle(paste0("Predictive accuracy for ", measure)) + 
+    ggtitle(paste0(measure)) + 
     scale_x_discrete(labels=c("01_03" = "(0.1,0.3)", "03_05" = "(0.3,0.5)", "05_07" = "(0.5,0.7)", 
                               "07_09" = "(0.7,0.9)", "09_11" = "(0.9,1.1)", "11_13" = "(1.1,1.3)",
                               "13_15" = "(1.3,1.5)")) + 
-    theme_minimal() +
-    theme(axis.title.x = element_text(size = 13, face = 'bold'),
-          axis.text.x = element_text(size = 13, face = 'bold'),
-          axis.title.y = element_text(size = 13, face = "bold"),
-          axis.text.y = element_text(size = 13, face = "bold"), 
-          plot.title = element_text(size = 15, face = "bold"),
-          plot.margin = margin(1,1,0,1,"cm"),
-          legend.position = c(0.2, 0.8)) 
-  return(plot)
+    theme_classic() +
+    theme(axis.title.x = element_text(size = 10),
+          axis.text.x = element_text(size = 6),
+          axis.title.y = element_text(size = 10),
+          axis.text.y = element_text(size = 8), 
+          plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+          plot.margin = margin(0,0,0,0,"cm"),
+          legend.position = c(0.2, 0.8)) #+ 
+    #ggsave(paste0("plots/suppmat/gordon/multivariate_",measure,".svg"), width=3.3, height=1.9)
+  
 }
 
 # linear trend statistical test: 
@@ -481,29 +845,93 @@ compare_pred_acc_bins <- function(df_name){ # df_name = "gordon_nested_permutati
 
 
 # WM_Task_2bk_Acc
-plot_pred_acc_bin("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv", "2-back task")
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv", "2-back Task")
 linear_trend_stats("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv")
 compare_pred_acc_bins("gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv")
 
 # PicVocab_AgeAdj
-plot_pred_acc_bin("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv", "Pic-vocab task")
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv", "Pic-vocab Task")
 linear_trend_stats("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv")
 compare_pred_acc_bins("gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv")
 
 # PMAT24_A_CR
-plot_pred_acc_bin("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv", "PMAT task")
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv", "PMAT Task")
 linear_trend_stats("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv")
 compare_pred_acc_bins("gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv")
 
 # ReadEng_AgeAdj
-plot_pred_acc_bin("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv", "Reading-cog task")
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv", "Reading-cog Task")
 linear_trend_stats("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv")
 compare_pred_acc_bins("gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv")
 
 # ListSort_AgeAdj
-plot_pred_acc_bin("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv", "List-sort task")
+plot_pred_acc_bin("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv", "List-sorting Task")
 linear_trend_stats("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv")
 compare_pred_acc_bins("gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv")
+```
+
+
+```{r}
+rm(list = ls())
+df_2back <- import(here::here("data/gordon_permutation/gordon_nested_permutation_test_12bin_WM_Task_2bk_Acc.csv"))[1,] %>%
+  pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+               values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+  mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Reverse-Activated"),
+         condition = rep("2-back Task", nrow(.))) %>%
+  select(-load_insensitive)
+
+df_ls <- import(here::here("data/gordon_permutation/gordon_nested_permutation_test_12bin_ListSort_AgeAdj.csv"))[1,] %>%
+  pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+               values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+  mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Reverse-Activated"),
+         condition = rep("List-sorting Task", nrow(.))) %>%
+  select(-load_insensitive)
+
+df_vocab <- import(here::here("data/gordon_permutation/gordon_nested_permutation_test_12bin_PicVocab_AgeAdj.csv"))[1,] %>%
+  pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+               values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+  mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Reverse-Activated"),
+         condition = rep("Vocab Task", nrow(.))) %>%
+  select(-load_insensitive)
+
+df_pmat <- import(here::here("data/gordon_permutation/gordon_nested_permutation_test_12bin_PMAT24_A_CR.csv"))[1,] %>%
+  pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+               values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+  mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Reverse-Activated"),
+         condition = rep("PMAT Task", nrow(.))) %>%
+  select(-load_insensitive)
+
+df_reading <- import(here::here("data/gordon_permutation/gordon_nested_permutation_test_12bin_ReadEng_AgeAdj.csv"))[1,] %>%
+  pivot_longer(., -load_insensitive, names_to = c("parcel_type","effect_size"), 
+               values_to = "pred_acc", names_pattern = "(.*)_(.*_.*)" ) %>%
+  mutate(parcel_type = ifelse(parcel_type == "act", "Activated", "Reverse-Activated"),
+         condition = rep("Reading-cog Task", nrow(.))) %>%
+  select(-load_insensitive)
+
+rbind(df_2back, df_ls, df_vocab, df_pmat, df_reading) %>%
+  ggplot(aes(x = effect_size, y = pred_acc, color = parcel_type)) +
+  facet_wrap(vars(condition), scales = "free", nrow = 2) + 
+  geom_point() + 
+  geom_line(aes(group = interaction(condition,parcel_type), color = parcel_type)) + 
+  ylim(0, 0.6) + 
+  xlab("Parcel Bins based on ES") + 
+  ylab("Predictive Accuracy (Measured by r)") + 
+  scale_x_discrete(labels=c("load_insensitive" = "Insensitive", 
+                            "01_03" = "(0.1,0.3)", "03_05" = "(0.3,0.5)", "05_07" = "(0.5,0.7)", 
+                            "07_09" = "(0.7,0.9)", "09_11" = "(0.9,1.1)", "11_13" = "(1.1,1.3)",
+                            "13_15" = "(1.3,1.5)"),
+                   guide = guide_axis(n.dodge = 2)) + 
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 6),
+        axis.title.y = element_text(size = 10, face = "bold"),
+        axis.text.y = element_text(size = 8, face = "bold"), 
+        plot.title = element_text(size = 10, hjust = 0.5),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.position = c(0.1, 0.92),
+        legend.title = element_blank(),
+        strip.text.x = element_text(size = 10, face = 'bold')) # + 
+  #ggsave("plots/suppmat/gordon/gordon_multivariate_facet.svg", width=7, height=4.5)
 ```
 
 ### Use load-effect to guide feature selection
@@ -554,5 +982,103 @@ plot_feature_selection("gordon_feature_selection_permutation_ReadEng_AgeAdj.csv"
 # ListSort_AgeAdj
 plot_feature_selection("gordon_feature_selection_permutation_ListSort_AgeAdj.csv")
 
+```
+
+
+```{r}
+rm(list = ls())
+
+# ----------
+# Figure 7a
+# ----------
+
+# 2back
+df_wm <- import(here::here('data/gordon_permutation/gordon_feature_selection_permutation_WM_Task_2bk_Acc.csv')) %>%
+  mutate(rep("2-back", nrow(.)))
+observe_wm <- df_wm %>%
+  select(observed, idx, parcel_type) %>%
+  rename("2-back_predAcc" = observed)
+null_wm <- df_wm %>%
+    select(lower, mean, upper, idx) %>%
+    rename("2-back_predAcc_lower" = lower, 
+           "2-back_predAcc_mean" = mean,
+           "2-back_predAcc_upper" = upper)
+
+# list-sorting
+df_ls <- import(here::here('data/gordon_permutation/gordon_feature_selection_permutation_ListSort_AgeAdj.csv')) %>%
+   mutate(rep("List-sorting", nrow(.)))
+observe_ls <- df_ls %>%
+  select(observed, idx, parcel_type) %>%
+  rename("List-sorting_predAcc" = observed)
+null_ls <- df_ls %>%
+    select(lower, mean, upper, idx) %>%
+    rename("List-sorting_predAcc_lower" = lower, 
+           "List-sorting_predAcc_mean" = mean,
+           "List-sorting_predAcc_upper" = upper)
+
+# pmat
+df_pmat <- import(here::here('data/gordon_permutation/gordon_feature_selection_permutation_PMAT24_A_CR.csv')) %>%
+  mutate(rep("PMAT", nrow(.)))
+observe_pmat <- df_pmat %>%
+  select(observed, idx, parcel_type) %>%
+  rename("PMAT_predAcc" = observed)
+null_pmat <- df_pmat %>%
+    select(lower, mean, upper, idx) %>%
+    rename("PMAT_predAcc_lower" = lower, 
+           "PMAT_predAcc_mean" = mean,
+           "PMAT_predAcc_upper" = upper)
+
+# reading-cog
+df_reading <- import(here::here('data/gordon_permutation/gordon_feature_selection_permutation_ReadEng_AgeAdj.csv')) %>%
+   mutate(rep("Reading-cog", nrow(.)))
+observe_reading <- df_reading %>%
+  select(observed, idx, parcel_type) %>%
+  rename("Reading-cog_predAcc" = observed)
+null_reading <- df_reading %>%
+    select(lower, mean, upper, idx) %>%
+    rename("Reading-cog_predAcc_lower" = lower, 
+           "Reading-cog_predAcc_mean" = mean,
+           "Reading-cog_predAcc_upper" = upper)
+
+# vocab
+df_vocab <- import(here::here('data/gordon_permutation/gordon_feature_selection_permutation_PicVocab_AgeAdj.csv')) %>%
+   mutate(rep("Vocab", nrow(.)))
+observe_vocab <- df_vocab %>%
+  select(observed, idx, parcel_type) %>%
+  rename("Vocab_predAcc" = observed)
+null_vocab <- df_vocab %>%
+    select(lower, mean, upper, idx) %>%
+    rename("Vocab_predAcc_lower" = lower, 
+           "Vocab_predAcc_mean" = mean,
+           "Vocab_predAcc_upper" = upper)
+
+null_cut <- left_join(null_pmat, null_reading) %>% left_join(.,  null_vocab) %>% left_join(.,  null_wm) %>% left_join(.,  null_ls) %>%
+  pivot_longer(., cols = -idx, names_pattern = "(.*)_predAcc_(.*)", names_to = c("beh_label","value_type"), values_to = "value") %>%
+  pivot_wider(., names_from = "value_type", values_from = "value" )
+
+left_join(observe_pmat, observe_reading,  by = c("idx","parcel_type")) %>% left_join(., observe_vocab, by = c("idx","parcel_type")) %>% left_join(., observe_wm, by = c("idx","parcel_type")) %>% left_join(., observe_ls, by = c("idx","parcel_type")) %>%
+  pivot_longer(., cols = c("PMAT_predAcc", "Reading-cog_predAcc", "Vocab_predAcc", "2-back_predAcc", "List-sorting_predAcc"), names_pattern = "(.*)_(.*)", names_to = c("beh_label","value_type"), values_to = "value") %>% 
+  ggplot(aes(x = idx, y = value)) + 
+  facet_wrap(vars(beh_label), scales = "free", nrow = 2) + 
+  geom_point(aes(color = parcel_type), size = 0.6) + 
+  geom_line(color = "black", size = 0.5) + 
+  geom_point(data = null_cut, aes(x = idx, y = mean), alpha = 0.2, color = "grey", size = 0.6) + 
+  geom_line(data = null_cut, aes(x = idx, y = mean), color = "grey", size = 0.5) +
+  geom_ribbon(data = null_cut, aes(x = idx, ymin = lower, ymax = upper), fill = "grey", 
+              linetype = 2, alpha = 0.2, inherit.aes = F) + 
+  theme_classic() + 
+  ylab("Predictive Acc") + 
+  xlab("Top n parcels") + 
+  scale_x_continuous(breaks=seq(0, 60, 10))+ 
+  theme(axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 8),
+        axis.title.y = element_text(size = 10),
+        axis.text.y = element_text(size = 8), 
+        plot.title = element_text(size = 10),
+        strip.text.x = element_text(size = 10),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.position = "none",
+        legend.title = element_blank())#+
+  #ggsave("plots/suppmat/gordon/model_building.svg",  width=7, height=4.5)
 ```
 
