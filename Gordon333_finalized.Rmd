@@ -499,6 +499,223 @@ es_info %>% filter(parcel_names %in% beh_pos_cor_parcel_name) %>%select(coref) %
 es_info %>% filter(parcel_names %in% beh_neg_cor_parcel_name) %>%select(coref) %>% describe(.)
 
 ```
+
+### Network distribution of within- and between-subject effect biased regions
+```{r}
+# get index of whether a parcel is biased toward within- or between-subject differences 
+bias_info <-  es_info %>%
+  mutate(rank_diff = rank_coref - rank_cohenD) %>%
+  mutate(rank_diff = scale(rank_diff)) %>%
+  select(parcel_names, rank_diff)
+
+# get the network name and the subnetwork name
+bias_info$network <- bias_info$parcel_names %>% 
+  map(~ str_split(., "_") %>% 
+        magrittr::extract2(., 1)) %>% 
+  map(~ .[2]) %>% unlist()
+
+# group by only main network 
+bias_table <- 
+  bias_info %>% 
+  group_by(network) %>%
+  summarise(Within_subject_effect_biased = sum(rank_diff >= 0),
+            Between_subject_effect_biased = sum(rank_diff < 0))
+
+# chi-square test
+test_bias <- function(network_name, bias_table){
+  net <- c(bias_table$Within_subject_effect_biased[which(bias_table$network == network_name)], 
+           bias_table$Between_subject_effect_biased[which(bias_table$network == network_name)])
+  print(paste0("testing ", network_name, " network"))
+  return(chisq.test(net))
+}
+bias_table$network %>% map(~ test_bias(., bias_table))
+
+# dataframe into table 
+rownames(bias_table) <- NULL
+colnames(bias_table) <- c("Network", "Within-subject Variation \n Biased Region Count", "Between-subject Variation \n Biased Region Count")
+bias_table %>%
+  kbl(booktabs = T, align = "c") %>%
+  kable_classic_2(full_width = F) %>%
+  column_spec(., 2:3, width = "4cm") 
+```
+
+### Computing ICC
+```{r, eval = F}
+contrast <- import('data/gordon333_cope11_rm_outlier.csv')
+subj <- contrast$Subject
+nback_2b <- import('/Users/peetal/Documents/Honor_project/data/Gordon/2mm/WM/cope9_pe/WM_Surf_2mm_cope9_pe.csv') %>%
+  filter(Subject %in% subj)
+nback_0b <- import('/Users/peetal/Documents/Honor_project/data/Gordon/2mm/WM/cope10_pe/WM_Surf_2mm_cope10_pe.csv') %>%
+  filter(Subject %in% subj)
+
+compute_icc <- function(parcel){ #parcel = 'L_Auditory_ID10'
+  parcel_2b <- nback_2b %>% select(parcel) %>% unname() %>% unlist()
+  parcel_0b <- nback_0b %>% select(parcel) %>% unname() %>% unlist()
+  merge <- data.frame(parcel_0b, parcel_2b)
+  
+  computed_icc <- psych::ICC(merge)
+  icc3k <- computed_icc$results %>% filter(type == 'ICC1') %>% select(ICC) %>% as.numeric()
+}
+
+parcel_names <- es_info$parcel_names
+icc_scores <- c()
+for (parcel in parcel_names){
+  icc_scores <- append(icc_scores, compute_icc(parcel))
+}
+
+es_info$icc = icc_scores
+es_info$rank_icc <- 334 - rank(icc_scores)
+
+within_icc_es <- 
+  es_info %>%
+  group_by(Parcel_type) %>%
+  nest() %>%
+  mutate(cortest = map(data, ~ cor.test(.$rank_cohenD, .$rank_icc, data = ., method = "spearman")),
+         estimate = map_dbl(cortest, ~ .$estimate),
+         p_value = map_dbl(cortest, ~ .$p.value)) %>% 
+  select(Parcel_type, estimate, p_value)
+within_icc_es
+
+cor.test(es_info$rank_cohenD, es_info$rank_icc)
+hist(es_info$icc)
+
+colors = c("red","blue","grey")
+es_info %>%
+  ggplot(aes(x = rank_cohenD, y = rank_icc)) + 
+  geom_point(alpha = 0.3) + 
+  geom_smooth(method = 'lm', se = F, color = 'black') + 
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        axis.text.y = element_text(size = 10), 
+        strip.text.x = element_text(size = 10),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.title = element_blank(),
+        legend.position = 'None') +
+  xlab("rank of |Cohen's d|") +
+  ylab("rank of ICC") + 
+  ggsave(paste0("plots/suppmat/gordon/cohend_icc.svg"), width=3.5, height=2.5)
+
+
+
+es_info %>%
+  ggplot(aes(x = rank_coref, y = rank_icc)) + 
+  geom_point(alpha = 0.3) + 
+  geom_smooth(method = 'lm', se = F, color = 'black') + 
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        axis.text.y = element_text(size = 10), 
+        strip.text.x = element_text(size = 10),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.title = element_blank(),
+        legend.position = 'None') +
+  xlab("rank of |r|") +
+  ylab("rank of ICC") + 
+  ggsave(paste0("plots/suppmat/gordon/pearsonr_icc.svg"), width=3.5, height=2.5)
+
+
+
+#output <- es_info %>% select(parcel_names, icc) %>% write.csv(., file = '/Users/peetal/Desktop/gordon_icc.csv', row.names = F)
+
+df <- import(here::here(paste0("data/gordon_permutation/", "gordon_feature_selection_permutation_WM_Task_2bk_Acc.csv")))
+df$fs <- c(0.00944725322781218,
+ -0.05361030702088929,
+ 0.11411127730427924,
+ 0.12656267453389092,
+ 0.1240426799316845,
+ 0.15381346710007268,
+ 0.153974790100809,
+ 0.20494283601620703,
+ 0.22740154521422803,
+ 0.23353770910906874,
+ 0.22636191332907202,
+ 0.23600301239938984,
+ 0.2576437559915502,
+ 0.2818439990945649,
+ 0.32195776071800797,
+ 0.32052841160159395,
+ 0.32841771193420033,
+ 0.3621364720274464,
+ 0.35307980613739165,
+ 0.35459927540167996,
+ 0.3622489216381649,
+ 0.36285357670458934,
+ 0.35867124206254913,
+ 0.3624093449370035,
+ 0.36900632062346517,
+ 0.366742278090206,
+ 0.3671768754683925,
+ 0.3797976691440927,
+ 0.38022864608715945,
+ 0.3835091891672183,
+ 0.3816371152957173,
+ 0.38450279540652577,
+ 0.3880738462600139,
+ 0.38946277986185057,
+ 0.4014369095880668,
+ 0.40150448629857366,
+ 0.4022506633607631,
+ 0.39912560648783363,
+ 0.40072227824443934,
+ 0.4054254628243855,
+ 0.40032240357785065,
+ 0.4095214596354323,
+ 0.4085154767377621,
+ 0.4102354760595787,
+ 0.41084074756208916,
+ 0.408023534796922,
+ 0.4275394606350539,
+ 0.4252647530623147,
+ 0.42376522361320257,
+ 0.4268983659450008,
+ 0.4274085392885759,
+ 0.42740553671171577,
+ 0.4223647751870329,
+ 0.4206729152109987,
+ 0.41603539379622295,
+ 0.41610039337795535,
+ 0.4123659712510195,
+ 0.4162363578939489,
+ 0.41457953619251453,
+ 0.4122643127090444)
+  # extract null 
+  null <- df %>%
+    select(lower, mean, upper, idx)
+  # plot
+df %>%
+    ggplot() + 
+    geom_point(aes(x = idx, y = fs), size = 0.6, color = 'red') + 
+    geom_point(aes(x = idx, y = observed), size = 0.6, color = 'black') + 
+    geom_line(aes(x = idx, y = fs), color = "red", size = 0.5) + 
+    geom_line(aes(x = idx, y = observed), color = "black", size = 0.5) +
+    geom_point(data = null, aes(x = idx, y = mean), alpha = 0.1, color = "gray1", size = 0.6) + 
+    geom_line(data = null, aes(x = idx, y = mean), color = "gray1", alpha = 0.1) +
+    geom_ribbon(data = null, aes(x = idx, ymin = lower, ymax = upper), fill = "gray1", 
+                linetype = 2, alpha = 0.1, inherit.aes = F) + 
+    theme_classic() + 
+    ylab("Predictive Acc") + 
+    xlab("Number of parcels") + 
+    ggtitle(paste0("2-back Task")) + 
+    scale_x_continuous(breaks=seq(0, 60, 10))+ 
+    theme(axis.title.x = element_text(size = 10),
+          axis.text.x = element_text(size = 8),
+          plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+          axis.text.y = element_text(size = 8), 
+          strip.text.x = element_text(size = 10),
+          plot.margin = margin(0,0,0,0,"cm"),
+          legend.position = "none",
+          legend.title = element_blank())#+ 
+  ggsave(paste0("plots/suppmat/gordon/select_byicc.svg"), width=3.3, height=2.5)
+
+
+
+#range(es_info$icc)
+```
+
+
 ### Load-effect sizes indicates parcel’s univariate predictive power
 ```{r}
 # -----------------------------------------------------------------------------
@@ -621,11 +838,12 @@ gordon_order_txt$parcel_name <- paste0(gordon_order_txt$Hemisphere,
                                        '_', gordon_order_txt$Network, '_ID', gordon_order_txt$Gordon_Parcel)
 for (row in 1:nrow(table)){ # row = 1
   table$gordon_id[row] <- gordon_order_txt$Gordon_Parcel[which(gordon_order_txt$parcel_name == table$parcel_names[row])]
+  #table$icc[row] <- parcel_icc$ICC[which(parcel_icc$parcel == table$parcel_names[row])]
 }
 
 # dataframe into table 
 rownames(table) <- NULL
-colnames(table) <- c("Parcel Name", "Load-effect Size", "Univariate predictive accuracy for 2-back performance", "Gordon ID" )
+colnames(table) <- c("Parcel Name", "Load-effect Size", "Univariate predictive accuracy for 2-back performance", "Gordon ID")
 table <- table[c("Parcel Name", "Gordon ID", "Load-effect Size", "Univariate predictive accuracy for 2-back performance")]
 
 table %>%
@@ -788,8 +1006,10 @@ linear_trend_stats <- function(df_name){ #df_name = "gordon_nested_permutation_t
     null_coef_deact <- append(null_coef_deact, null_lt$coefficients[2,1])
   }
   # compute p-values for the observed linear trend coefficients. 
-  act_real_lt_p <- (1- pnorm((act_real_lt$coefficients[2,1] - mean(null_coef_act))/sd(null_coef_act)))*2
-  deact_real_lt_p <- (1- pnorm((deact_real_lt$coefficients[2,1] - mean(null_coef_deact))/sd(null_coef_deact)))*2
+  #act_real_lt_p <- (1- pnorm((act_real_lt$coefficients[2,1] - mean(null_coef_act))/sd(null_coef_act)))*2
+  act_real_lt_p <- sum(act_real_lt$coefficients[2,1] < null_coef_act)/1000
+  #deact_real_lt_p <- (1- pnorm((deact_real_lt$coefficients[2,1] - mean(null_coef_deact))/sd(null_coef_deact)))*2
+  deact_real_lt_p <- sum(deact_real_lt$coefficients[2,1] < null_coef_deact)/1000
   
   print(paste0("Act linear trend coefficient is ", act_real_lt$coefficients[2,1], "and its P values is ", act_real_lt_p))
   print(paste0("Deact linear trend coefficient is ", deact_real_lt$coefficients[2,1], "and its P values is ", deact_real_lt_p))
@@ -831,10 +1051,14 @@ compare_pred_acc_bins <- function(df_name){ # df_name = "gordon_nested_permutati
   
   
   # compute p values: 
-  p_01_03 <- (1- pnorm(abs(real$act_minus_deactivated[1] - mean(null_01_03))/sd(null_01_03)))*2
-  p_03_05 <- (1- pnorm(abs(real$act_minus_deactivated[2] - mean(null_03_05))/sd(null_03_05)))*2
-  p_05_07 <- (1- pnorm(abs(real$act_minus_deactivated[3] - mean(null_05_07))/sd(null_05_07)))*2
-  p_07_09 <- (1- pnorm(abs(real$act_minus_deactivated[4] - mean(null_07_09))/sd(null_07_09)))*2
+  #p_01_03 <- (1- pnorm(abs(real$act_minus_deactivated[1] - mean(null_01_03))/sd(null_01_03)))*2
+  p_01_03 <- sum(real$act_minus_deactivated[1] < null_01_03)/1000
+  #p_03_05 <- (1- pnorm(abs(real$act_minus_deactivated[2] - mean(null_03_05))/sd(null_03_05)))*2
+  p_03_05 <- sum(real$act_minus_deactivated[2] < null_03_05)/1000
+  #p_05_07 <- (1- pnorm(abs(real$act_minus_deactivated[3] - mean(null_05_07))/sd(null_05_07)))*2
+  p_05_07 <- sum(real$act_minus_deactivated[3] < null_05_07)/1000
+  #p_07_09 <- (1- pnorm(abs(real$act_minus_deactivated[4] - mean(null_07_09))/sd(null_07_09)))*2
+  p_07_09 <- sum(real$act_minus_deactivated[4] < null_07_09)/1000
 
   print(paste0("Difference in bin 01_03 is ", real$act_minus_deactivated[1], "P value is ",  p_01_03))
   print(paste0("Difference in bin 03_05 is ", real$act_minus_deactivated[2], "P value is ",  p_03_05))
@@ -908,7 +1132,8 @@ df_reading <- import(here::here("data/gordon_permutation/gordon_nested_permutati
          condition = rep("Reading-cog Task", nrow(.))) %>%
   select(-load_insensitive)
 
-rbind(df_2back, df_ls, df_vocab, df_pmat, df_reading) %>%
+rbind(df_vocab, df_pmat, df_reading, df_2back, df_ls) %>%
+  mutate(condition = factor(condition, levels = c("PMAT Task", "Reading-cog Task", "Vocab Task", "2-back Task", "List-sorting Task"))) %>%
   ggplot(aes(x = effect_size, y = pred_acc, color = parcel_type)) +
   facet_wrap(vars(condition), scales = "free", nrow = 2) + 
   geom_point() + 
@@ -930,7 +1155,7 @@ rbind(df_2back, df_ls, df_vocab, df_pmat, df_reading) %>%
         plot.margin = margin(0,0,0,0,"cm"),
         legend.position = c(0.1, 0.92),
         legend.title = element_blank(),
-        strip.text.x = element_text(size = 10, face = 'bold')) # + 
+        strip.text.x = element_text(size = 10, face = 'bold'))  #+ 
   #ggsave("plots/suppmat/gordon/gordon_multivariate_facet.svg", width=7, height=4.5)
 ```
 
@@ -1054,10 +1279,13 @@ null_vocab <- df_vocab %>%
 
 null_cut <- left_join(null_pmat, null_reading) %>% left_join(.,  null_vocab) %>% left_join(.,  null_wm) %>% left_join(.,  null_ls) %>%
   pivot_longer(., cols = -idx, names_pattern = "(.*)_predAcc_(.*)", names_to = c("beh_label","value_type"), values_to = "value") %>%
-  pivot_wider(., names_from = "value_type", values_from = "value" )
+  pivot_wider(., names_from = "value_type", values_from = "value" ) %>% 
+  mutate(beh_label = factor(beh_label, levels = c("PMAT", "Reading-cog", "Vocab", "2-back", "List-sorting"))) 
+  
 
 left_join(observe_pmat, observe_reading,  by = c("idx","parcel_type")) %>% left_join(., observe_vocab, by = c("idx","parcel_type")) %>% left_join(., observe_wm, by = c("idx","parcel_type")) %>% left_join(., observe_ls, by = c("idx","parcel_type")) %>%
   pivot_longer(., cols = c("PMAT_predAcc", "Reading-cog_predAcc", "Vocab_predAcc", "2-back_predAcc", "List-sorting_predAcc"), names_pattern = "(.*)_(.*)", names_to = c("beh_label","value_type"), values_to = "value") %>% 
+  mutate(beh_label = factor(beh_label, levels = c("PMAT", "Reading-cog", "Vocab", "2-back", "List-sorting"))) %>%
   ggplot(aes(x = idx, y = value)) + 
   facet_wrap(vars(beh_label), scales = "free", nrow = 2) + 
   geom_point(aes(color = parcel_type), size = 0.6) + 
@@ -1078,7 +1306,7 @@ left_join(observe_pmat, observe_reading,  by = c("idx","parcel_type")) %>% left_
         strip.text.x = element_text(size = 10),
         plot.margin = margin(0,0,0,0,"cm"),
         legend.position = "none",
-        legend.title = element_blank())#+
+        legend.title = element_blank()) #+
   #ggsave("plots/suppmat/gordon/model_building.svg",  width=7, height=4.5)
 ```
 

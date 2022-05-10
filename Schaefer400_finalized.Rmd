@@ -19,6 +19,7 @@ library(kableExtra)
 #library(Rmisc)
 library(afex)
 library(psych)
+library(magrittr)
 ```
 
 ### Check and remove potential outliers (behavioral and neural)
@@ -552,6 +553,99 @@ es_info %>% filter(parcel_names %in% beh_pos_cor_parcel_name) %>%select(coref) %
 es_info %>% filter(parcel_names %in% beh_neg_cor_parcel_name) %>%select(coref) %>% describe(.)
 
 ```
+### Network distribution of within- and between-subject effect biased regions
+```{r}
+# get index of whether a parcel is biased toward within- or between-subject differences 
+bias_info <-  es_info %>%
+  mutate(rank_diff = rank_coref - rank_cohenD) %>%
+  mutate(rank_diff = scale(rank_diff)) %>%
+  select(parcel_names, rank_diff)
+
+# get the network name and the subnetwork name
+bias_info$hem <- bias_info$parcel_names %>%  #hem
+  map(~ str_split(., "_") %>% 
+        magrittr::extract2(., 1)) %>% 
+  map(~ .[1]) %>% unlist()
+bias_info$network <- bias_info$parcel_names %>% #network
+  map(~ str_split(., "_") %>% 
+        magrittr::extract2(., 1)) %>% 
+  map(~ .[2]) %>% unlist()
+bias_info$sub_net <- bias_info$parcel_names %>% #subnet
+  map(~ str_split(., "_") %>% 
+        magrittr::extract2(., 1)) %>% 
+  map(~ .[3]) %>% unlist()
+
+
+# from https://github.com/ThomasYeoLab/CBIG/blob/master/stable_projects/brain_parcellation/Yeo2011_fcMRI_clustering/1000subjects_reference/Yeo_JNeurophysiol11_SplitLabels/Yeo2011_7networks_N1000.split_components.glossary.csv  
+# lpfc, vpfc vmpfc etc were all named into PFC
+acronym <- c("Cing","Par","pCun","PFCl","OFC","PFCmp","PFCv","Temp",
+             "pCunPCC","PFC","FEF","Post","PrCv","TempPole","FrOperIns","Med",
+             "ParOper","TempOcc","PFCdPFCm","PrC","TempOccPar")
+fullName <- c("Cingulate","Parietal","Precuneus","Frontal","OFC","Frontal","Frontal","Temporal",
+              "Precuneus","Frontal","FEF","Posterior","Precentral","Temporal","FrOperIns","Medial",
+              "Parietal","Temporal","Frontal","Precentral","Parietal")
+# substitue acronyms with full names
+for (i in 1:length(bias_info$sub_net)){ # i = 1
+  if (bias_info$sub_net[i] %in% acronym){
+    bias_info$sub_net[i] <- fullName[which(acronym == bias_info$sub_net[i])]
+  }
+  else{
+    bias_info$sub_net[i] <- ""
+  }
+}
+
+# group by both main network and sub-network
+#bias_info %>% 
+#  group_by(network, sub_net) %>%
+#  summarise(Within_subject_effect_biased = sum(rank_diff >= 0),
+#            Between_subject_effect_biased = sum(rank_diff < 0))
+
+# group by only main network and hemisphere
+bias_table <- 
+  bias_info %>% 
+  group_by(network) %>%
+  summarise(Within_subject_effect_biased = sum(rank_diff >= 0),
+            Between_subject_effect_biased = sum(rank_diff < 0))
+
+# chi-square test for network
+dorsoatten <- c(bias_table$Within_subject_effect_biased[which(bias_table$network == 'DorsAttn')], 
+                bias_table$Between_subject_effect_biased[which(bias_table$network == 'DorsAttn')])
+chisq.test(dorsoatten)
+
+somMot <- c(bias_table$Within_subject_effect_biased[which(bias_table$network == 'SomMot')], 
+            bias_table$Between_subject_effect_biased[which(bias_table$network == 'SomMot')])
+chisq.test(somMot)
+
+# dataframe into table 
+rownames(bias_table) <- NULL
+colnames(bias_table) <- c("Network", "Within-subject Variation \n Biased Region Count", "Between-subject Variation \n Biased Region Count")
+bias_table %>%
+  kbl(booktabs = T, align = "c") %>%
+  kable_classic_2(full_width = F) %>%
+  column_spec(., 2:3, width = "4cm") 
+
+# group by only sub network, only care about frontal and parietal. 
+bias_table2 <- 
+bias_info %>% 
+  filter(sub_net %in% c('Frontal', 'Parietal')) %>%
+  group_by(sub_net, hem) %>%
+  summarise(Within_subject_effect_biased = sum(rank_diff >= 0),
+            Between_subject_effect_biased = sum(rank_diff < 0)) %>% 
+  mutate(region = paste0(hem,"_",sub_net))
+bias_table2 <- bias_table2[,c('region', 'Within_subject_effect_biased', 'Between_subject_effect_biased')]
+
+rownames(bias_table2) <- NULL
+colnames(bias_table2) <- c("Lobe", "Within-subject Variation \n Biased Region Count", "Between-subject Variation \n Biased Region Count")
+bias_table2 %>%
+  kbl(booktabs = T, align = "c") %>%
+  kable_classic_2(full_width = F) %>%
+  column_spec(., 2:3, width = "4cm") 
+
+
+
+```
+
+
 ### Load-effect sizes indicates parcel’s univariate predictive power
 ```{r}
 # -----------------------------------------------------------------------------
@@ -829,8 +923,10 @@ linear_trend_stats <- function(df_name){ #df_name = "schaefer_nested_permutation
     null_coef_deact <- append(null_coef_deact, null_lt$coefficients[2,1])
   }
   # compute p-values for the observed linear trend coefficients. 
-  act_real_lt_p <- (1- pnorm((act_real_lt$coefficients[2,1] - mean(null_coef_act))/sd(null_coef_act)))*2
-  deact_real_lt_p <- (1- pnorm((deact_real_lt$coefficients[2,1] - mean(null_coef_deact))/sd(null_coef_deact)))*2
+  #act_real_lt_p <- (1- pnorm((act_real_lt$coefficients[2,1] - mean(null_coef_act))/sd(null_coef_act)))*2
+  act_real_lt_p <- sum(act_real_lt$coefficients[2,1] < null_coef_act)/1000
+  #deact_real_lt_p <- (1- pnorm((deact_real_lt$coefficients[2,1] - mean(null_coef_deact))/sd(null_coef_deact)))*2
+  deact_real_lt_p <- sum(deact_real_lt$coefficients[2,1] < null_coef_deact)/1000
   
   print(paste0("Act linear trend coefficient is ", act_real_lt$coefficients[2,1], "and its P values is ", act_real_lt_p))
   print(paste0("Deact linear trend coefficient is ", deact_real_lt$coefficients[2,1], "and its P values is ", deact_real_lt_p))
@@ -872,10 +968,16 @@ compare_pred_acc_bins <- function(df_name){ # df_name = "schaefer_nested_permuta
   
   
   # compute p values: 
-  p_01_03 <- (1- pnorm(abs(real$act_minus_deactivated[1] - mean(null_01_03))/sd(null_01_03)))*2
-  p_03_05 <- (1- pnorm(abs(real$act_minus_deactivated[2] - mean(null_03_05))/sd(null_03_05)))*2
-  p_05_07 <- (1- pnorm(abs(real$act_minus_deactivated[3] - mean(null_05_07))/sd(null_05_07)))*2
-  p_07_09 <- (1- pnorm(abs(real$act_minus_deactivated[4] - mean(null_07_09))/sd(null_07_09)))*2
+  #p_01_03 <- (1- pnorm(abs(real$act_minus_deactivated[1] - mean(null_01_03))/sd(null_01_03)))*2
+  p_01_03 <- sum(real$act_minus_deactivated[1] < null_01_03)/1000
+  #p_03_05 <- (1- pnorm(abs(real$act_minus_deactivated[2] - mean(null_03_05))/sd(null_03_05)))*2
+  p_03_05 <- sum(real$act_minus_deactivated[2] < null_03_05)/1000
+  #p_05_07 <- (1- pnorm(abs(real$act_minus_deactivated[3] - mean(null_05_07))/sd(null_05_07)))*2
+  p_05_07 <- sum(real$act_minus_deactivated[3] < null_05_07)/1000
+  #p_07_09 <- (1- pnorm(abs(real$act_minus_deactivated[4] - mean(null_07_09))/sd(null_07_09)))*2
+  p_07_09 <- sum(real$act_minus_deactivated[4] < null_07_09)/1000
+  
+  
 
   print(paste0("Difference in bin 01_03 is ", real$act_minus_deactivated[1], "P value is ",  p_01_03))
   print(paste0("Difference in bin 03_05 is ", real$act_minus_deactivated[2], "P value is ",  p_03_05))
@@ -1178,4 +1280,175 @@ data.frame("measure" = c("Inscanner \n(2-back)","Inscanner \n(2-back)", "Outscan
 
 
 ```
+
+### Extra plotting
+```{r, eval = F}
+# all values were computed from notebook on github, here is just for plotting. 
+
+data.frame("parcel" = c("Load-Activated (157)","Load-Deactivated (196)"),
+                 "predAcc" = c(0.54, 0.44)) %>%
+  ggplot(aes(x = parcel, y = predAcc, fill = parcel)) +
+  geom_bar(stat = "identity", position = position_dodge(), color = 'black', width = 0.5) + 
+  ylab("Predictive Acc") + 
+  xlab("") + 
+  theme_minimal() +
+  theme(axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 10),
+        axis.title.y = element_text(size = 10),
+        axis.text.y = element_text(size = 10), 
+        plot.margin = margin(1,1,0,1,"cm"),
+        legend.position = "none",
+        legend.title = element_blank()) +
+  ylim(0, 0.6) + 
+  ggsave(paste0("plots/suppmat/schaefer/load_act_vs_deact.svg"), width=3.5, height=2.5)
+  
+
+data.frame("effect_size" = c("01_03", "03_05", "05_07", "07_09", "09_11", "11_13",
+                             "13_15", "01_03", "03_05", "05_07", "07_09"),
+           "parcel_type" = c("Activated","Activated","Activated","Activated","Activated","Activated","Activated",
+                             "Deactivated","Deactivated","Deactivated","Deactivated"),
+           "pred_acc" = c(0.2739556885484732, 0.2895603686491316, 0.33847940221538164, 0.41085154212651737,
+                          0.4577892038428485, 0.46989922184177557, 0.48181078671610855, 0.3698083284572665,
+                          0.3026077479099265, 0.3384129818160498, 0.31189725523917694)) %>%
+ggplot(aes(x = effect_size, y = pred_acc, color = parcel_type)) + 
+  geom_point() + 
+  geom_line(aes(group = parcel_type, color = parcel_type)) + 
+  ylim(0, 0.6) + 
+  xlab("Parcel Bins based on ES") + 
+  ylab("Predictive Accuracy (Measured by r)") + 
+  scale_x_discrete(labels=c("01_03" = "(0.1,0.3)", "03_05" = "(0.3,0.5)", "05_07" = "(0.5,0.7)", 
+                            "07_09" = "(0.7,0.9)", "09_11" = "(0.9,1.1)", "11_13" = "(1.1,1.3)",
+                            "13_15" = "(1.3,1.5)")) + 
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 13),
+        axis.text.x = element_text(size = 13),
+        axis.title.y = element_text(size = 13, face = "bold"),
+        axis.text.y = element_text(size = 13, face = "bold"), 
+        plot.title = element_text(size = 10, hjust = 0.5),
+        plot.margin = margin(0,0,0,0,"cm"),
+        legend.position = c(0.1, 0.92),
+        legend.title = element_blank(),
+        strip.text.x = element_text(size = 10, face = 'bold'))
+
+
+
+
+df <- import(here::here(paste0("data/schaefer_permutation/", "schaefer_feature_selection_permutation_WM_Task_2bk_Acc.csv")))
+df$fs <- c(0.3409228365932808,
+0.40347586684057385,
+0.43857956671323683,
+0.4452635481853114,
+0.4926074335627305,
+0.5148259585621039,
+0.5171622466419243,
+0.526034844053037,
+0.5026084413704922,
+0.4935925939873234,
+0.5218979941546333,
+0.5138329045318037,
+0.5183856761365246,
+0.5124613719341651,
+0.5099179128786777,
+0.5288769612026399,
+0.5317785966599938,
+0.5257488448161559,
+0.5311877823360971,
+0.5364056482615346,
+0.5360211544931051,
+0.5389149322709873,
+0.5301778875832354,
+0.5268534300762997,
+0.531810140338786,
+0.5300076753028868,
+0.5297754393223559,
+0.5231522887168262,
+0.5310161883988843,
+0.5338584344320425,
+0.5354837863400821,
+0.5353501098824902,
+0.5357228282289781,
+0.5362468542289801,
+0.531940742947932,
+0.525540595451335,
+0.5233801250090697,
+0.5254368192851337,
+0.5243050954846106,
+0.5189556380475157,
+0.5182222296687212,
+0.5208413611673313,
+0.5192980125980804,
+0.5194115243106456,
+0.5221806394228437,
+0.5250117479033225,
+0.523978877983599,
+0.5258659309576004,
+0.5267353926830389,
+0.5264926584166891,
+0.5260174098761813,
+0.5254765003443875,
+0.5288974962067093,
+0.5266082169927999,
+0.5278113473660607,
+0.5241728000211734,
+0.523899766578922,
+0.5266613935716848,
+0.5303298705666576,
+0.5328622990744114)
+  # extract null 
+  null <- df %>%
+    select(lower, mean, upper, idx)
+  # plot
+df %>%
+    ggplot() + 
+    geom_point(aes(x = idx, y = fs), size = 0.6, color = 'red') + 
+    geom_point(aes(x = idx, y = observed), size = 0.6, color = 'black') + 
+    geom_line(aes(x = idx, y = fs), color = "red", size = 0.5) + 
+    geom_line(aes(x = idx, y = observed), color = "black", size = 0.5) +
+    geom_point(data = null, aes(x = idx, y = mean), alpha = 0.1, color = "gray1", size = 0.6) + 
+    geom_line(data = null, aes(x = idx, y = mean), color = "gray1", alpha = 0.1) +
+    geom_ribbon(data = null, aes(x = idx, ymin = lower, ymax = upper), fill = "gray1", 
+                linetype = 2, alpha = 0.1, inherit.aes = F) + 
+    theme_classic() + 
+    ylab("Predictive Acc") + 
+    xlab("Number of parcels") + 
+    ggtitle(paste0("2-back Task")) + 
+    scale_x_continuous(breaks=seq(0, 60, 10))+ 
+    theme(axis.title.x = element_text(size = 10),
+          axis.text.x = element_text(size = 8),
+          plot.title = element_text(size = 10, hjust = 0.5, face = "bold"),
+          axis.text.y = element_text(size = 8), 
+          strip.text.x = element_text(size = 10),
+          plot.margin = margin(0,0,0,0,"cm"),
+          legend.position = "none",
+          legend.title = element_blank())+ 
+  ggsave(paste0("plots/suppmat/schaefer/forward_selection.svg"), width=3.3, height=1.9)
+
+
+
+z_diff <- atanh(0.54) - atanh(0.44)
+z_se <- ((1/(154))+(1/(193)))^0.5
+print(z_diff/z_se)
+2*(1-pnorm(z_diff/z_se))
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
