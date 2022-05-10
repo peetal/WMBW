@@ -1,0 +1,21 @@
+"0","top_30_parcels <- es_info[order(es_info$rank_cohenD),][1:30,] %>% select(parcel_names) %>% unlist() %>% unname()
+top_5_parcels <- top_30_parcels[1:5]
+
+outvec <- c()
+for (i in gordon_order){ # i = 'LH_Vis_1'
+  if (i %in% top_30_parcels){
+    if (i %in% top_5_parcels){
+      outvec <- append(outvec,2)
+    } else {
+      outvec <- append(outvec,1)
+    }
+  } else{
+    outvec <- append(outvec,0)
+  }
+}
+
+write.table(outvec, '/Users/peetal/Documents/Honor_project/Schaefer/working/schaefer400/outvec_txt/gordon_top_30.txt', col.names=FALSE,row.names=FALSE)
+write_gordon333_pscalar('gordon_top_30.txt', 'gordon_top_30.pscalar.nii')
+
+"
+"2","The working directory was changed to /Users/peetal/Documents/Honor_project/workbench/bin_macosx64 inside a notebook chunk. The working directory will be reset when the chunk is finished running. Use the knitr root.dir option in the setup chunk to change the working directory for notebook chunks."

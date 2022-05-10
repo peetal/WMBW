@@ -1,0 +1,23 @@
+"0","knitr::opts_chunk$set(echo = TRUE)"
+"2","Warning messages:
+"
+"2","1: Unknown or uninitialised column: `Between_subject_effect_biased`. 
+"
+"2","2: Unknown or uninitialised column: `Between_subject_effect_biased`. 
+"
+"2","3: Unknown or uninitialised column: `Within_subject_effect_biased`. 
+"
+"2","4: Unknown or uninitialised column: `Between_subject_effect_biased`. 
+"
+"2","5: Unknown or uninitialised column: `Within_subject_effect_biased`. 
+"
+"2","6: Unknown or uninitialised column: `Between_subject_effect_biased`. 
+"
+"2","7: Unknown or uninitialised column: `Within_subject_effect_biased`. 
+"
+"2","8: Unknown or uninitialised column: `Between_subject_effect_biased`. 
+"
+"2","9: Unknown or uninitialised column: `Within_subject_effect_biased`. 
+"
+"2","10: Unknown or uninitialised column: `Between_subject_effect_biased`. 
+"

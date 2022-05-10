@@ -1,0 +1,12 @@
+"0","  #xlab("""") +"
+"0","  #ggsave(""plots/schaefer_parcel_es.svg"", width=4.5, height=3)"
+"0","  "
+"0",""
+"0","# Stats"
+"0","info_table %>%"
+"0","  mutate(network_name = as.factor(network_name)) %>%"
+"0","  group_by(network_name) %>%"
+"0","  summarize(mean_effect_size = mean(effect_size), "
+"0","            sd_effect_size = sd(effect_size))"
+"2","`summarise()` ungrouping output (override with `.groups` argument)
+"

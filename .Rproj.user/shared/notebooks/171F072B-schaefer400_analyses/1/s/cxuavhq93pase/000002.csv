@@ -1,0 +1,7 @@
+"0",""
+"0","rm(list = ls())"
+"0","# read in neural and behavioral data"
+"0","schaefer400_cope11 <- import(here::here('./wm_schaf_cope11_pe_2mm_pe_400.csv'))"
+"2","Error in import(here::here(""./wm_schaf_cope11_pe_2mm_pe_400.csv"")) : 
+  No such file
+"

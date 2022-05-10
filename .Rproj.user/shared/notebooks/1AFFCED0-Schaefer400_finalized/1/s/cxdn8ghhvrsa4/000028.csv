@@ -1,0 +1,1 @@
+"0","es_info %>% filter(parcel_names %in% beh_neg_cor_parcel_name) %>%select(coref) %>% describe(.)"

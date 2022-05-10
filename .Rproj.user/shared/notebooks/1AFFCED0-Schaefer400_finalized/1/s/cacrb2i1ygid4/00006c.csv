@@ -1,0 +1,9 @@
+"0","# Stats
+schaefer_vertex %>%
+  mutate(network = as.factor(network)) %>%
+  group_by(network) %>%
+  summarize(mean_effect_size = mean(es),
+            sd_effect_size = sd(es))
+"
+"2","`summarise()` ungrouping output (override with `.groups` argument)
+"
